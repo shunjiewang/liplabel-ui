@@ -7,8 +7,8 @@ import os
 def paint_dot(event,x,y,flags,param):
 	if event == cv2.EVENT_LBUTTONDOWN:
 		cv2.circle(param[0],(x,y),3,(60,20,220),-1)
-		#f = open(str(param[2]) + "_" + str(param[1]) + ".txt", "a+")
-		f = open(str(param[1]) + ".txt", "a+")
+		f = open(str(param[2]) + "_" + str(param[1]) + ".txt", "a+")
+		#f = open(str(param[1]) + ".txt", "a+")
 		f.write(str((x,y))+'\n')
 		f.close()
 
@@ -17,12 +17,12 @@ def interface(windowName, frame):
 		cv2.imshow(windowName, frame)
 		key = cv2.waitKey(20) & 0xFF
 		if key == 32 or key == 110: #Space,n
-			reply = easygui.ynbox(msg="Is the annotation satisfying?", choices=["Yes","No"])
-			if reply == False:
-				continue
-			else:
-				break
-				cv2.destroyWindow(windowName)
+			#reply = easygui.ynbox(msg="Is the annotation satisfying?", choices=["Yes","No"])
+			#if reply == False:
+			#	continue
+			#else:
+			break
+			cv2.destroyWindow(windowName)
 
 	cv2.destroyAllWindows()
 
@@ -46,10 +46,10 @@ def paint_tp_list(tp_list):
 		
 		curr_frame = cv2.imread("temp.bmp")
 		cv2.namedWindow('LipLabeler')
-		cv2.setMouseCallback('LipLabeler',paint_dot,(curr_frame,tp)) #3rd param: file_name
+		cv2.setMouseCallback('LipLabeler',paint_dot,(curr_frame,tp,file_name)) #3rd param: file_name
 
 		interface('LipLabeler', curr_frame)
 
-	easygui.msgbox('You have finished labeling all frames.','Good Job!')
+	#easygui.msgbox('You have finished labeling all frames.','Good Job!')
 
 paint_tp_list(m_tp_list)
