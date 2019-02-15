@@ -1,2 +1,2 @@
 # LipLabeler
-A GUI tool for labeling lip aperture for experimental phonetics.
+A tool for manually annotating the lip aperture for studies in experimental phonetics.
