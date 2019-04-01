@@ -53,14 +53,20 @@ def interface(windowName, canvas, tp, frame_index, file_name):
             break
         elif key == 114:  # [R] to reload
             reloadTrigger = True
+            temp_4_coords_list = []
             break
         elif key == 113:  # [Q] to quit
             if len(temp_4_coords_list) == 4:
                 cv2.imwrite(output_img_name + ".bmp", canvas)
                 unsorted_4_coords_dict[output_img_name] = temp_4_coords_list
             temp_4_coords_list = []
+            open("checkpoint.txt", "w+").close()
+            f = open("checkpoint.txt", "a+")
+            f.write(frame_index)
+            f.close()
             if not (output_img_name in output_img_name_list): 
                 output_img_name_list.append(output_img_name)
+            
             cv2.destroyAllWindows()
             sys.exit(0)
     cv2.destroyAllWindows()
@@ -71,10 +77,6 @@ def open_vid_file():
     global unsorted_4_coords_dict
     global output_img_name_list
 
-
-
-
-    logo = "logo.png"
     all_mode = "Start a new annotation"
     cont_mode = "Resume an unfinished work"
     sg_mode = "Modify a single frame"
@@ -83,7 +85,7 @@ def open_vid_file():
         msg=welcome_msg, title="LipLabeler", choices=(all_mode, cont_mode, sg_mode))
     vid_path = easygui.fileopenbox(title="Select a video file (*.MOV)...")
     if choice == all_mode:
-        loop_timepts(m_tp_list, vid_path)
+        loop_timepts(0, m_tp_list, vid_path)
     elif choice == sg_mode:
         final_result_dict = np.load("final_result_dict.npy").item()
         unsorted_4_coords_dict = np.load("unsorted_4_coords_dict.npy").item()
@@ -97,10 +99,11 @@ def open_vid_file():
         final_result_dict = np.load("final_result_dict.npy").item()
         unsorted_4_coords_dict = np.load("unsorted_4_coords_dict.npy").item()
         output_img_name_list = list(np.load("output_img_name_list.npy"))
-        loop_timepts(m_tp_list, vid_path)
+        f = open("checkpoint.txt","r")
+        start_tp = int(f.read()) - 1
+        loop_timepts(start_tp,m_tp_list, vid_path)
         return
 
-# TODO: The function is not complete yet
 def modify_single(frame_index, imported_dicts, vid_path):
     
     reloadTrigger = True
@@ -136,12 +139,12 @@ def modify_single(frame_index, imported_dicts, vid_path):
     os.remove("temp.bmp")  # TODO: how to avoid busy
 
 
-def loop_timepts(tp_list, vid_path):
+def loop_timepts(start_pt, tp_list, vid_path):
     global temp_4_coords_list
     file_name = str(os.path.basename(vid_path))
     total_frames_count = str(len(tp_list))
 
-    tp_index = 0
+    tp_index = start_pt
     while tp_index < len(tp_list):
         tp = tp_list[tp_index]
         imgphon.get_video_frame(vid_path, tp)
