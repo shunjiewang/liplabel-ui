@@ -1,66 +1,233 @@
+import os
+import sys
+import re
+
 import numpy as np
 import cv2
 import easygui
+
 import imgphon
-import os
 
-# Questions:
-# 1. How are timepoints selected/inputted?
-# 2. What to label when the mouth is shut?
 
-m_tp_list = [5.000,10.111]
 
-def paint_dot(event,x,y,flags,param):
+m_tp_list = [5.000, 10.110, 15.001, 20.001, 25.010]
 
-	if event == cv2.EVENT_LBUTTONDOWN:
-		#Paint a dot
-		cv2.circle(param[0],(x,y),3,(60,20,220),-1)
-		#Write the coordinate to f
-		f = open(str(param[2]) + "_" + str(param[1]) + ".txt", "a+")
-		f.write(str((x,y))+'\n')
-		f.close()
+unsorted_4_coords_dict = {}  # key: output_image_name => value: [four coords]
+output_img_name_list = []  # a list of all output files id, e.g. SUZHOU_18.MOV_2_10.11
+temp_4_coords_list = []  # temp list of four coords
+# key: output_img_name => value: {key: position => value: x-val/y-val}
+final_result_dict = {}
+working_directory = ""
 
-def interface(windowName, canvas):	
-	redo = False
 
-	while True:
-		cv2.imshow(windowName, canvas)
-		key = cv2.waitKey(1) & 0xFF
-		if key == 32 or key == 110: #Space,n
-			break
-		elif key == 114:
-			redo = True
-			break
+def paint_dot(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        # param's are passed in by 3rd arg of setMouseCallback, param[0] is the image/canvas curr_frame
+        cv2.circle(param[0], (x, y), 3, (60, 20, 220), -1)
+        # param[1] is the timepoint value tp, param[2] is the file_name
+        temp_4_coords_list.append((x, y))
 
-	cv2.destroyAllWindows()
-	return redo
+
+def interface(windowName, canvas, tp, frame_index, file_name):
+    dir_name = "output_imgs"
+
+    try:
+        os.mkdir(os.path.join(working_directory, dir_name))
+    except:
+        pass
+
+    global temp_4_coords_list
+    global output_img_name_list
+    global unsorted_4_coords_dict
+    reloadTrigger = False
+    output_img_name = str(file_name) + "-" + str(frame_index) + "-" + str(tp)
+    while True:
+        cv2.imshow(windowName, canvas)
+        key = cv2.waitKey(1) & 0xFF  # ASCII code of pressed key
+        if key == 110:  # [N] to next
+            if len(temp_4_coords_list) != 4:
+                reloadTrigger = True
+                temp_4_coords_list = []
+                break
+            cv2.imwrite(os.path.join(working_directory, dir_name, output_img_name + ".bmp"), canvas)
+            unsorted_4_coords_dict[output_img_name] = temp_4_coords_list
+            if not (output_img_name in output_img_name_list): 
+                output_img_name_list.append(output_img_name)
+            temp_4_coords_list = []
+            break
+        elif key == 114:  # [R] to reload
+            reloadTrigger = True
+            temp_4_coords_list = []
+            break
+        elif key == 113:  # [Q] to quit
+            open(os.path.join(working_directory, "checkpoint.txt"), "w+").close()
+            f = open(os.path.join(working_directory, "checkpoint.txt"), "a+")
+            if len(temp_4_coords_list) == 4:
+                cv2.imwrite(os.path.join(working_directory, dir_name, output_img_name + ".bmp"), canvas)
+                unsorted_4_coords_dict[output_img_name] = temp_4_coords_list
+                f.write(frame_index)
+            else:
+                f.write(str(int(frame_index) - 1))
+            temp_4_coords_list = []
+            f.close()
+            if not (output_img_name in output_img_name_list): 
+                output_img_name_list.append(output_img_name)
+            
+            cv2.destroyAllWindows()
+            sys.exit(0)
+    cv2.destroyAllWindows()
+    return reloadTrigger
 
 def open_vid_file():
-	vid_path = easygui.fileopenbox(title="Select a video file (*.MOV)...")
-	return vid_path
+    global final_result_dict
+    global unsorted_4_coords_dict
+    global output_img_name_list
+    global working_directory
 
-def paint_tp_list(tp_list):
-	easygui.msgbox(msg="Please select a video file (*.MOV) to start...", title = "LipLabeler GUI")
-	
-	vid_path = open_vid_file()
-	file_name = os.path.basename(vid_path)
+    all_mode = "Start a new annotation"
+    cont_mode = "Resume an unfinished work"
+    sg_mode = "Modify a single frame"
+    welcome_msg = "Please select an option to proceed. \nNOTICE: You may only select the 2nd or the 3rd option on annotations that you already started or finished."
+    choice = easygui.buttonbox(
+        msg=welcome_msg, title="LipLabeler", choices=(all_mode, cont_mode, sg_mode))
+    vid_path = easygui.fileopenbox(title="Select a video file (*.MOV)...")
+    working_directory = re.sub(r'\..*', '', vid_path)
+    try:
+        os.mkdir(working_directory)
+    except:
+        pass
+        
+    if choice == all_mode:
+        loop_timepts(0, m_tp_list, vid_path)
+    elif choice == sg_mode:
+        final_result_dict = np.load(os.path.join(working_directory,"final_result_dict.npy")).item()
+        unsorted_4_coords_dict = np.load(os.path.join(working_directory,"unsorted_4_coords_dict.npy")).item()
+        output_img_name_list = list(np.load(os.path.join(working_directory,"output_img_name_list.npy")))
+        frame_index = easygui.integerbox(
+            msg="Please enter the frame index you would like to modify", title='Frame Timepoint', lowerbound=1)
+        modify_single(frame_index, (final_result_dict,unsorted_4_coords_dict,output_img_name_list), vid_path)
+        return
+    elif choice == cont_mode:
+        final_result_dict = np.load("final_result_dict.npy").item()
+        unsorted_4_coords_dict = np.load("unsorted_4_coords_dict.npy").item()
+        output_img_name_list = list(np.load("output_img_name_list.npy"))
+        f = open(os.path.join(working_directory, "checkpoint.txt"),"r")
+        start_tp = int(f.read())
+        loop_timepts(start_tp,m_tp_list, vid_path)
+        return
 
-	m_index = 0
+def modify_single(frame_index, imported_dicts, vid_path):
+    
+    reloadTrigger = True
+    global unsorted_4_coords_dict
+    global temp_4_coords_list
+    global output_img_name_list
 
-	while m_index < len(tp_list):
-		tp = tp_list[m_index]
-		imgphon.get_video_frame(vid_path, tp)
-		
-		curr_frame = cv2.imread("temp.bmp")
-		cv2.namedWindow('LipLabeler')
-		cv2.setMouseCallback('LipLabeler',paint_dot,(curr_frame,tp,file_name))
-		
-		redo = interface('LipLabeler', curr_frame)
+    #unsorted_4_coords_dict = imported_dicts[1]
+    #output_img_name_list = imported_dicts[2]
+    tp = m_tp_list[frame_index - 1]
+    file_name = os.path.basename(vid_path)
+    #output_img_name = str(file_name) + "_" + str(frame_index) + "_" + str(tp)
+    imgphon.get_video_frame(vid_path, tp)
 
-		if redo == False:
-			m_index += 1 #Advance to the next timepoint
-		else:
-			open(str(file_name) + "_" + str(tp) + ".txt", 'w').close() #Clear recorded coordinates in the txt file
+    while reloadTrigger == True:
+        curr_frame = cv2.imread("temp.bmp")
+        windowName = str(file_name) + " (Frame " + str(frame_index) + ": " + str(tp) + \
+        ") | [R] Reload | [N] Save & Next | [Q] Save & Quit"
+        cv2.namedWindow(windowName)
+        cv2.moveWindow(windowName, 320, 180)
+        cv2.setMouseCallback(windowName, paint_dot, (curr_frame, tp, file_name))
 
-if __name__=="__main__":
-	paint_tp_list(m_tp_list)
+        reloadTrigger = interface(windowName, curr_frame,
+                                tp, frame_index, file_name)
+
+        if reloadTrigger == False:
+            #unsorted_4_coords_dict[output_img_name] = temp_4_coords_list
+            #temp_4_coords_list = []
+            break
+        else:
+            temp_4_coords_list = []
+
+    os.remove("temp.bmp")  # TODO: how to avoid busy
+
+
+def loop_timepts(start_pt, tp_list, vid_path):
+    global temp_4_coords_list
+    file_name = str(os.path.basename(vid_path))
+    total_frames_count = str(len(tp_list))
+
+    tp_index = start_pt
+    while tp_index < len(tp_list):
+        tp = tp_list[tp_index]
+        imgphon.get_video_frame(vid_path, tp)
+
+        curr_frame = cv2.imread("temp.bmp")
+        frame_index = str(tp_index + 1)
+        windowName = file_name + " (" + frame_index + "/" + total_frames_count + \
+            ") | [R] Reload | [N] Save & Next | [Q] Save & Quit"
+        cv2.namedWindow(windowName)
+        cv2.moveWindow(windowName, 320, 180)
+        cv2.setMouseCallback(windowName, paint_dot,
+                             (curr_frame, tp, file_name))
+
+        reloadTrigger = interface(
+            windowName, curr_frame, tp, frame_index, file_name)
+
+        if reloadTrigger == False:
+            tp_index += 1  # Advance to the next timepoint
+        else:
+            temp_4_coords_list = []
+
+    os.remove("temp.bmp")  # TODO: how to avoid busy
+
+
+def take_x(elem):
+    return elem[0]
+
+
+def output_file():
+    tmp_dict = {}
+    open(os.path.join(working_directory, "result.txt"), "w+").close()
+    f = open(os.path.join(working_directory, "result.txt"), "a+")
+    f.write("video_file\tframe_index\ttimestamp\tleftcx\tleftcy\trightcx\trightcy\tupperx\tuppery\tlowerx\tlowery\n")
+    for output_img_name in output_img_name_list:
+        for item in output_img_name.split('-'):
+            f.write(item + '\t')
+        #f.write(output_img_name + '\t')
+        tmp_l = unsorted_4_coords_dict[output_img_name]
+        tmp_l.sort(key=take_x)
+
+        tmp_dict["leftx"] = tmp_l[0][0]
+        tmp_dict["lefty"] = tmp_l[0][1]
+        tmp_dict["rightx"] = tmp_l[3][0]
+        tmp_dict["righty"] = tmp_l[3][1]
+
+        f.write(str(tmp_l[0][0]) + '\t' + str(tmp_l[0][1]) +
+                '\t' + str(tmp_l[3][0]) + '\t' + str(tmp_l[3][1]) + '\t')
+        if tmp_l[1][1] < tmp_l[2][1]:
+            tmp_dict["upperx"] = tmp_l[1][0]
+            tmp_dict["uppery"] = tmp_l[1][1]
+            tmp_dict["lowerx"] = tmp_l[2][0]
+            tmp_dict["lowery"] = tmp_l[2][1]
+            f.write(str(tmp_l[1][0]) + '\t' + str(tmp_l[1][1]) +
+                    '\t' + str(tmp_l[2][0]) + '\t' + str(tmp_l[2][1]))
+        else:
+            tmp_dict["upperx"] = tmp_l[2][0]
+            tmp_dict["uppery"] = tmp_l[2][1]
+            tmp_dict["lowerx"] = tmp_l[1][0]
+            tmp_dict["lowery"] = tmp_l[1][1]
+            f.write(str(tmp_l[2][0]) + '\t' + str(tmp_l[2][1]) +
+                    '\t' + str(tmp_l[1][0]) + '\t' + str(tmp_l[1][1]))
+        f.write('\n')
+        final_result_dict[output_img_name] = tmp_dict
+        tmp_dict = {}
+    f.close()
+    np.save(os.path.join(working_directory,"final_result_dict.npy"), final_result_dict)
+    np.save(os.path.join(working_directory,"unsorted_4_coords_dict.npy"), unsorted_4_coords_dict)
+    np.save(os.path.join(working_directory,"output_img_name_list.npy"), output_img_name_list)
+
+if __name__ == "__main__":
+    open_vid_file()
+    output_file()
+
+# interface has problem, (output_img.._dict,), index out of range
