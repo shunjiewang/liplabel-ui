@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 
 import numpy as np
 import cv2
@@ -7,12 +8,7 @@ import easygui
 
 import imgphon
 
-dir_name = "output_imgs"
 
-try:
-    os.mkdir(dir_name)
-except:
-    pass
 
 m_tp_list = [5.000, 10.110, 15.001, 20.001, 25.010]
 
@@ -21,6 +17,7 @@ output_img_name_list = []  # a list of all output files id, e.g. SUZHOU_18.MOV_2
 temp_4_coords_list = []  # temp list of four coords
 # key: output_img_name => value: {key: position => value: x-val/y-val}
 final_result_dict = {}
+working_directory = ""
 
 
 def paint_dot(event, x, y, flags, param):
@@ -32,11 +29,18 @@ def paint_dot(event, x, y, flags, param):
 
 
 def interface(windowName, canvas, tp, frame_index, file_name):
+    dir_name = "output_imgs"
+
+    try:
+        os.mkdir(os.path.join(working_directory, dir_name))
+    except:
+        pass
+
     global temp_4_coords_list
     global output_img_name_list
     global unsorted_4_coords_dict
     reloadTrigger = False
-    output_img_name = str(file_name) + "_" + str(frame_index) + "_" + str(tp)
+    output_img_name = str(file_name) + "-" + str(frame_index) + "-" + str(tp)
     while True:
         cv2.imshow(windowName, canvas)
         key = cv2.waitKey(1) & 0xFF  # ASCII code of pressed key
@@ -45,7 +49,7 @@ def interface(windowName, canvas, tp, frame_index, file_name):
                 reloadTrigger = True
                 temp_4_coords_list = []
                 break
-            cv2.imwrite(os.path.join(dir_name, output_img_name + ".bmp"), canvas)
+            cv2.imwrite(os.path.join(working_directory, dir_name, output_img_name + ".bmp"), canvas)
             unsorted_4_coords_dict[output_img_name] = temp_4_coords_list
             if not (output_img_name in output_img_name_list): 
                 output_img_name_list.append(output_img_name)
@@ -56,13 +60,15 @@ def interface(windowName, canvas, tp, frame_index, file_name):
             temp_4_coords_list = []
             break
         elif key == 113:  # [Q] to quit
+            open(os.path.join(working_directory, "checkpoint.txt"), "w+").close()
+            f = open(os.path.join(working_directory, "checkpoint.txt"), "a+")
             if len(temp_4_coords_list) == 4:
-                cv2.imwrite(output_img_name + ".bmp", canvas)
+                cv2.imwrite(os.path.join(working_directory, dir_name, output_img_name + ".bmp"), canvas)
                 unsorted_4_coords_dict[output_img_name] = temp_4_coords_list
+                f.write(frame_index)
+            else:
+                f.write(str(int(frame_index) - 1))
             temp_4_coords_list = []
-            open("checkpoint.txt", "w+").close()
-            f = open("checkpoint.txt", "a+")
-            f.write(frame_index)
             f.close()
             if not (output_img_name in output_img_name_list): 
                 output_img_name_list.append(output_img_name)
@@ -76,6 +82,7 @@ def open_vid_file():
     global final_result_dict
     global unsorted_4_coords_dict
     global output_img_name_list
+    global working_directory
 
     all_mode = "Start a new annotation"
     cont_mode = "Resume an unfinished work"
@@ -84,13 +91,18 @@ def open_vid_file():
     choice = easygui.buttonbox(
         msg=welcome_msg, title="LipLabeler", choices=(all_mode, cont_mode, sg_mode))
     vid_path = easygui.fileopenbox(title="Select a video file (*.MOV)...")
+    working_directory = re.sub(r'\..*', '', vid_path)
+    try:
+        os.mkdir(working_directory)
+    except:
+        pass
+        
     if choice == all_mode:
         loop_timepts(0, m_tp_list, vid_path)
     elif choice == sg_mode:
-        final_result_dict = np.load("final_result_dict.npy").item()
-        unsorted_4_coords_dict = np.load("unsorted_4_coords_dict.npy").item()
-        output_img_name_list = list(np.load("output_img_name_list.npy"))
-
+        final_result_dict = np.load(os.path.join(working_directory,"final_result_dict.npy")).item()
+        unsorted_4_coords_dict = np.load(os.path.join(working_directory,"unsorted_4_coords_dict.npy")).item()
+        output_img_name_list = list(np.load(os.path.join(working_directory,"output_img_name_list.npy")))
         frame_index = easygui.integerbox(
             msg="Please enter the frame index you would like to modify", title='Frame Timepoint', lowerbound=1)
         modify_single(frame_index, (final_result_dict,unsorted_4_coords_dict,output_img_name_list), vid_path)
@@ -99,8 +111,8 @@ def open_vid_file():
         final_result_dict = np.load("final_result_dict.npy").item()
         unsorted_4_coords_dict = np.load("unsorted_4_coords_dict.npy").item()
         output_img_name_list = list(np.load("output_img_name_list.npy"))
-        f = open("checkpoint.txt","r")
-        start_tp = int(f.read()) - 1
+        f = open(os.path.join(working_directory, "checkpoint.txt"),"r")
+        start_tp = int(f.read())
         loop_timepts(start_tp,m_tp_list, vid_path)
         return
 
@@ -175,11 +187,13 @@ def take_x(elem):
 
 def output_file():
     tmp_dict = {}
-    open("result.txt", "w+").close()
-    f = open("result.txt", "a+")
-    f.write("tp\tleftcx\tleftcy\trightcx\trightcy\tupperx\tuppery\tlowerx\tlowery\n")
+    open(os.path.join(working_directory, "result.txt"), "w+").close()
+    f = open(os.path.join(working_directory, "result.txt"), "a+")
+    f.write("video_file\tframe_index\ttimestamp\tleftcx\tleftcy\trightcx\trightcy\tupperx\tuppery\tlowerx\tlowery\n")
     for output_img_name in output_img_name_list:
-        f.write(output_img_name + '\t')
+        for item in output_img_name.split('-'):
+            f.write(item + '\t')
+        #f.write(output_img_name + '\t')
         tmp_l = unsorted_4_coords_dict[output_img_name]
         tmp_l.sort(key=take_x)
 
@@ -208,10 +222,9 @@ def output_file():
         final_result_dict[output_img_name] = tmp_dict
         tmp_dict = {}
     f.close()
-    np.save("final_result_dict.npy", final_result_dict)
-    np.save("unsorted_4_coords_dict.npy", unsorted_4_coords_dict)
-    np.save("output_img_name_list.npy", output_img_name_list)
-
+    np.save(os.path.join(working_directory,"final_result_dict.npy"), final_result_dict)
+    np.save(os.path.join(working_directory,"unsorted_4_coords_dict.npy"), unsorted_4_coords_dict)
+    np.save(os.path.join(working_directory,"output_img_name_list.npy"), output_img_name_list)
 
 if __name__ == "__main__":
     open_vid_file()
