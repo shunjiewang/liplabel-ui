@@ -9,7 +9,7 @@ import easygui
 
 import imgphon
 
-m_tp_list = [5.000, 10.110, 15.001, 20.001, 25.010]
+m_tp_list = [5.000, 10.110]
 
 def interface(windowName, canvas, tp, frame_index, file_name, result_dict, clicks_list, working_directory):
     dir_name = "output_imgs"
@@ -27,23 +27,21 @@ def interface(windowName, canvas, tp, frame_index, file_name, result_dict, click
                 shouldReload = True
                 break
             cv2.imwrite(os.path.join(working_directory, dir_name,
-                                     output_img_name + ".bmp"), canvas)
+                                     output_img_name + ".jpg"), canvas)
             result_dict[tp] = sort_coords(clicks_list)
-            clicks_list = []
             break
         elif key == 114:  # [R] to reload
             shouldReload = True
-            clicks_list = []
             break
         elif key == 113:  # [Q] to quit
             if len(clicks_list) == 4:
                 cv2.imwrite(os.path.join(working_directory,
-                                         dir_name, output_img_name + ".bmp"), canvas)
+                                         dir_name, output_img_name + ".jpg"), canvas)
                 result_dict[tp] = sort_coords(clicks_list)
-            clicks_list = []
             cv2.destroyAllWindows()
             np.save(os.path.join(working_directory,
-                                 "result_dict.npy"), result_dict)
+                                 "result_dict.npy"), result_dict, allow_pickle=True)
+            os.remove("temp.bmp")
             sys.exit(0)
     cv2.destroyAllWindows()
     return (shouldReload, result_dict)
@@ -54,12 +52,12 @@ def paint_dot(event, x, y, flags, param):
         param[1].append((x, y))
 
 
-def label_single(frame_index, vid_path, total_frames_count, result_dict, clicks_list, working_directory):
+def label_single(frame_index, vid_path, total_frames_count, result_dict, working_directory):
     shouldReload = True
     tp = m_tp_list[frame_index - 1]
     file_name = os.path.basename(vid_path)
     imgphon.get_video_frame(vid_path, tp)
-    m_clicks_list = clicks_list
+    m_clicks_list = []
 
     while shouldReload:
         curr_frame = cv2.imread("temp.bmp")
@@ -79,16 +77,13 @@ def label_single(frame_index, vid_path, total_frames_count, result_dict, clicks_
     return interface_return[1]
 
 
-def label_multiple(start_pt, tp_list, vid_path, result_dict, clicks_list, working_directory):
+def label_multiple(start_pt, tp_list, vid_path, result_dict, working_directory):
     total_frames_count = str(len(tp_list))
     tp_index = start_pt
-    m_result_dict = result_dict
-    m_clicks_list = clicks_list
     while tp_index < len(tp_list):
         m_tp_index = tp_index + 1
-        new_result_dict = label_single(m_tp_index, vid_path, total_frames_count, m_result_dict, m_clicks_list, working_directory)
-        m_result_dict = new_result_dict
-        m_clicks_list = []
+        new_result_dict = label_single(m_tp_index, vid_path, total_frames_count, result_dict, working_directory)
+        result_dict = new_result_dict
         tp_index += 1
 
 def sort_coords(tmp_l):
@@ -117,8 +112,8 @@ def sort_coords(tmp_l):
     return tmp_dict
 
 if __name__ == "__main__":
+
     result_dict = {}
-    clicks_list = []
 
     all_mode = "Start a new annotation"
     cont_mode = "Resume an unfinished work"
@@ -143,12 +138,12 @@ if __name__ == "__main__":
 
     # ALL MODE
     if choice == all_mode:
-        label_multiple(0, m_tp_list, vid_path, result_dict, clicks_list, working_directory)
+        label_multiple(0, m_tp_list, vid_path, result_dict, working_directory)
     # RESUME MODE
     elif choice == cont_mode:
         with contextlib.suppress(FileNotFoundError):
             result_dict = np.load(os.path.join(
-                working_directory, "result_dict.npy")).item()
+                working_directory, "result_dict.npy"), allow_pickle=True).item()
         start_tp = 0
         tp_index = 0
         while tp_index < len(m_tp_list):
@@ -157,13 +152,13 @@ if __name__ == "__main__":
                 start_tp = tp_index
                 break
             tp_index += 1
-        label_multiple(start_tp, m_tp_list, vid_path, result_dict, clicks_list, working_directory)
+        label_multiple(start_tp, m_tp_list, vid_path, result_dict, working_directory)
     # SINGLE MODE
     elif choice == single_mode:
         try:
             with open(os.path.join(working_directory, "result.txt")):
                 result_dict = np.load(os.path.join(
-                    working_directory, "result_dict.npy")).item()
+                    working_directory, "result_dict.npy"), allow_pickle=True).item()
         except FileNotFoundError:
             if easygui.msgbox(msg="""Single mode is only for modifying existing project. \
                                      You need to start one first.""") == "OK":
@@ -173,7 +168,7 @@ if __name__ == "__main__":
             lowerbound=1, upperbound=(len(m_tp_list)))
         if frame_index == None:
             sys.exit(0)
-        label_single(frame_index, vid_path, 0, result_dict, clicks_list, working_directory)
+        label_single(frame_index, vid_path, 0, result_dict, working_directory)
 
     # WRITING TO OUTPUT
     keys = ["leftx","lefty","rightx","righty","upperx","uppery","lowerx","lowery"]
@@ -195,4 +190,4 @@ if __name__ == "__main__":
             tp_index += 1
 
     np.save(os.path.join(working_directory,
-                         "result_dict.npy"), result_dict)
+                         "result_dict.npy"), result_dict, allow_pickle=True)
