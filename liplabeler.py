@@ -9,13 +9,12 @@ import easygui
 
 import imgphon
 
-m_tp_list = [5.000, 10.110]
 
-def interface(windowName, canvas, tp, frame_index, file_name, result_dict, clicks_list, working_directory):
-    dir_name = "output_imgs"
+def interface(windowName, canvas, tp, frame_index, file_name, result_dict, clicks_list, working_dir, sort_fn, label_num_constr: int, ext):
+    output_imgs_dir = "output_imgs"
 
     with contextlib.suppress(FileExistsError):
-        os.mkdir(os.path.join(working_directory, dir_name))
+        os.mkdir(os.path.join(working_dir, output_imgs_dir))
 
     shouldReload = False
     output_img_name = str(file_name) + "-" + str(frame_index) + "-" + str(tp)
@@ -23,28 +22,30 @@ def interface(windowName, canvas, tp, frame_index, file_name, result_dict, click
         cv2.imshow(windowName, canvas)
         key = cv2.waitKey(1) & 0xFF  # ASCII code of pressed key
         if key == 110:  # [N] to next
-            if len(clicks_list) != 4:
+            if label_num_constr and (len(clicks_list) != label_num_constr):
                 shouldReload = True
                 break
-            cv2.imwrite(os.path.join(working_directory, dir_name,
-                                     output_img_name + ".jpg"), canvas)
-            result_dict[tp] = sort_coords(clicks_list)
+            cv2.imwrite(os.path.join(working_dir, output_imgs_dir,
+                                     output_img_name + ext), canvas)
+            # When using for other purposes, customize sort_coords()
+            result_dict[tp] = sort_fn(clicks_list)
             break
         elif key == 114:  # [R] to reload
             shouldReload = True
             break
         elif key == 113:  # [Q] to quit
-            if len(clicks_list) == 4:
-                cv2.imwrite(os.path.join(working_directory,
-                                         dir_name, output_img_name + ".jpg"), canvas)
-                result_dict[tp] = sort_coords(clicks_list)
+            if label_num_constr and (len(clicks_list) == label_num_constr):
+                cv2.imwrite(os.path.join(working_dir,
+                                         output_imgs_dir, output_img_name + ext), canvas)
+                result_dict[tp] = sort_fn(clicks_list)
             cv2.destroyAllWindows()
-            np.save(os.path.join(working_directory,
+            np.save(os.path.join(working_dir,
                                  "result_dict.npy"), result_dict, allow_pickle=True)
             os.remove("temp.bmp")
             sys.exit(0)
     cv2.destroyAllWindows()
     return (shouldReload, result_dict)
+
 
 def paint_dot(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
@@ -52,9 +53,9 @@ def paint_dot(event, x, y, flags, param):
         param[1].append((x, y))
 
 
-def label_single(frame_index, vid_path, total_frames_count, result_dict, working_directory):
+def label_single(frame_index: int, vid_path: str, total_frames_count: int, result_dict: dict, working_dir: str, sort_fn, label_num_constr: int, ext, tp_list):
     shouldReload = True
-    tp = m_tp_list[frame_index - 1]
+    tp = tp_list[frame_index - 1]
     file_name = os.path.basename(vid_path)
     imgphon.get_video_frame(vid_path, tp)
     m_clicks_list = []
@@ -65,26 +66,29 @@ def label_single(frame_index, vid_path, total_frames_count, result_dict, working
             " Sec | [R] Reload | [N] Save & Next | [Q] Save & Quit"
         cv2.namedWindow(windowName)
         cv2.moveWindow(windowName, 320, 180)
-        cv2.setMouseCallback(windowName, paint_dot, (curr_frame, m_clicks_list))
+        cv2.setMouseCallback(windowName, paint_dot,
+                             (curr_frame, m_clicks_list))
 
         interface_return = interface(windowName, curr_frame,
-                                 tp, frame_index, file_name, result_dict, m_clicks_list, working_directory)
+                                     tp, frame_index, file_name, result_dict, m_clicks_list, working_dir, sort_fn, label_num_constr, ext)
         shouldReload = interface_return[0]
         if shouldReload:
             m_clicks_list = []
-    
+
     os.remove("temp.bmp")
     return interface_return[1]
 
 
-def label_multiple(start_pt, tp_list, vid_path, result_dict, working_directory):
+def label_multiple(start_pt: int, tp_list: list, vid_path: str, result_dict: dict, working_dir: str, sort_fn, label_num_constr: int, ext):
     total_frames_count = str(len(tp_list))
     tp_index = start_pt
     while tp_index < len(tp_list):
         m_tp_index = tp_index + 1
-        new_result_dict = label_single(m_tp_index, vid_path, total_frames_count, result_dict, working_directory)
+        new_result_dict = label_single(
+            m_tp_index, vid_path, total_frames_count, result_dict, working_dir, sort_fn, label_num_constr, ext, tp_list)
         result_dict = new_result_dict
         tp_index += 1
+
 
 def sort_coords(tmp_l):
     def take_x(elem):
@@ -108,10 +112,13 @@ def sort_coords(tmp_l):
                 "uppery": upper[1],
                 "lowerx": lower[0],
                 "lowery": lower[1]}
-    
+
     return tmp_dict
 
+
 if __name__ == "__main__":
+
+    m_tp_list = [5.000, 10.110]
 
     result_dict = {}
 
@@ -132,18 +139,28 @@ if __name__ == "__main__":
     if vid_path == None:
         sys.exit(0)
 
-    working_directory = re.sub(r'\..*', '', vid_path)
+    working_dir = re.sub(r'\..*', '', vid_path)
     with contextlib.suppress(FileExistsError):
-        os.mkdir(working_directory)
+        os.mkdir(working_dir)
+
+    def output_quality():
+        ext = easygui.choicebox(msg='Select desired output image quality: \n .bmp: large file, high quality \n .png: smaller file, high quality \n .jpg: smallest file, low quality',
+                                title="Select Quality", choices=[".bmp", ".png", ".jpg"], preselect=1)
+        if ext == None:
+            sys.exit(0)
+        else:
+            return ext
 
     # ALL MODE
     if choice == all_mode:
-        label_multiple(0, m_tp_list, vid_path, result_dict, working_directory)
+        ext = output_quality()
+        label_multiple(0, m_tp_list, vid_path, result_dict,
+                       working_dir, sort_coords, 4, ext)
     # RESUME MODE
     elif choice == cont_mode:
         with contextlib.suppress(FileNotFoundError):
             result_dict = np.load(os.path.join(
-                working_directory, "result_dict.npy"), allow_pickle=True).item()
+                working_dir, "result_dict.npy"), allow_pickle=True).item()
         start_tp = 0
         tp_index = 0
         while tp_index < len(m_tp_list):
@@ -152,28 +169,33 @@ if __name__ == "__main__":
                 start_tp = tp_index
                 break
             tp_index += 1
-        label_multiple(start_tp, m_tp_list, vid_path, result_dict, working_directory)
+        ext = output_quality()
+        label_multiple(start_tp, m_tp_list, vid_path,
+                       result_dict, working_dir, sort_coords, 4, ext)
     # SINGLE MODE
     elif choice == single_mode:
         try:
-            with open(os.path.join(working_directory, "result.txt")):
+#           with open(os.path.join(working_dir, "result.txt")):
                 result_dict = np.load(os.path.join(
-                    working_directory, "result_dict.npy"), allow_pickle=True).item()
+                    working_dir, "result_dict.npy"), allow_pickle=True).item()
         except FileNotFoundError:
             if easygui.msgbox(msg="""Single mode is only for modifying existing project. \
                                      You need to start one first.""") == "OK":
                 sys.exit(0)
         frame_index = easygui.integerbox(
-            msg="Please enter the frame index you would like to modify", title='Frame Timepoint', 
+            msg="Please enter the frame index you would like to modify", title='Frame Timepoint',
             lowerbound=1, upperbound=(len(m_tp_list)))
         if frame_index == None:
             sys.exit(0)
-        label_single(frame_index, vid_path, 0, result_dict, working_directory)
+        ext = output_quality()
+        label_single(frame_index, vid_path, 0, result_dict,
+                     working_dir, sort_coords, 4, ext, m_tp_list)
 
     # WRITING TO OUTPUT
-    keys = ["leftx","lefty","rightx","righty","upperx","uppery","lowerx","lowery"]
-    open(os.path.join(working_directory, "result.txt"), "w+").close()
-    with open(os.path.join(working_directory, "result.txt"), "a+") as f:
+    keys = ["leftx", "lefty", "rightx", "righty",
+            "upperx", "uppery", "lowerx", "lowery"]
+    open(os.path.join(working_dir, "result.txt"), "w+").close()
+    with open(os.path.join(working_dir, "result.txt"), "a+") as f:
         f.write("index\ttimestamp\t")
         for key in keys:
             f.write(key + "\t")
@@ -189,5 +211,5 @@ if __name__ == "__main__":
             f.write("\n")
             tp_index += 1
 
-    np.save(os.path.join(working_directory,
+    np.save(os.path.join(working_dir,
                          "result_dict.npy"), result_dict, allow_pickle=True)
