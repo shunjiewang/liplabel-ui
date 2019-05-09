@@ -27,7 +27,6 @@ def interface(windowName, canvas, tp, frame_index, file_name, result_dict, click
                 break
             cv2.imwrite(os.path.join(working_dir, output_imgs_dir,
                                      output_img_name + ext), canvas)
-            # When using for other purposes, customize sort_coords()
             result_dict[tp] = sort_fn(clicks_list)
             break
         elif key == 114:  # [R] to reload
@@ -144,7 +143,10 @@ if __name__ == "__main__":
         os.mkdir(working_dir)
 
     def output_quality():
-        ext = easygui.choicebox(msg='Select desired output image quality: \n .bmp: large file, high quality \n .png: smaller file, high quality \n .jpg: smallest file, low quality',
+        ext = easygui.choicebox(msg="Select desired output image quality: \n \
+        .bmp: large file, high quality \n \
+        .png: smaller file, high quality \n \
+        .jpg: smallest file, low quality",
                                 title="Select Quality", choices=[".bmp", ".png", ".jpg"], preselect=1)
         if ext == None:
             sys.exit(0)
@@ -175,9 +177,8 @@ if __name__ == "__main__":
     # SINGLE MODE
     elif choice == single_mode:
         try:
-#           with open(os.path.join(working_dir, "result.txt")):
-                result_dict = np.load(os.path.join(
-                    working_dir, "result_dict.npy"), allow_pickle=True).item()
+            result_dict = np.load(os.path.join(
+                working_dir, "result_dict.npy"), allow_pickle=True).item()
         except FileNotFoundError:
             if easygui.msgbox(msg="""Single mode is only for modifying existing project. \
                                      You need to start one first.""") == "OK":
